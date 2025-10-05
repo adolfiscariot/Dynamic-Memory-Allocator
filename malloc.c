@@ -112,13 +112,31 @@ int free_mem_block(struct mem_block *mem_block_to_free, free_list *free_list){
 		current_mem_block = current_mem_block->next_block;
 	}
 
-
-	//TO BE CONTINUED FROM HERE
-	if (next_mem_block == NULL){
-
+	if (current_mem_block == NULL){
+		fprintf(stderr, "Mem block not found in free list\n");
+		return 1;
 	}
-	
 
+	/*
+	 * If there's no preceding_mem_block then mem_block_to_free
+	 * is the head_block in our free_list. If it exists then
+	 * mem_block_to_free's next_block should point to preceding_
+	 * mem_block's next_block. Preceding_mem_block's next_block
+	 * should then be changed to mem_block_to_free
+	 */
+
+	if (preceding_mem_block == NULL){
+		mem_block_to_free->next_block = free_list->head_block;
+		free_list->head_block = mem_block_to_free;
+	}
+	else {
+		preceding_mem_block->next_block = mem_block_to_free;
+		mem_block_to_free->next_block = preceding_mem_block->next_block;
+	}
+	mem_block_to_free->is_free = FREE_BLOCK;
+	
+	printf("Freed memory block back into free list\n");
+	return 0;
 }
 
 int main(void){
