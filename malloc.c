@@ -21,9 +21,9 @@ typedef struct mem_block{
 }mem_block;
 
 /*
- ===========
- * FREE LIST
- ===========
+ =====================
+ * FREE LIST STRUCTURE
+ =====================
  */
 typedef struct{
 	struct mem_block *head_block;
@@ -60,9 +60,9 @@ int allocate_mem(struct mem_block *mem_block){
 
 
 /*
- =====================
- *FREE LIST OPERATIONS
- =====================
+ ====================
+ *FREE LIST FUNCTIONS
+ ====================
  */
 
 /*
@@ -88,18 +88,17 @@ int traverse_free_list(free_list *free_list){
 }
 
 /*
- * Insert back to free list.
+ * Insert mem block back to free list.
  * This operation is called when a mem block is freed
-
  */
 
 int free_mem_block(struct mem_block *mem_block_to_free, free_list *free_list){
 	/* 
-	 * Get the next mem block. If it exists, use it to 
-	 * get the block that precedes it. If not, our block
-	 * is the last one. If preceding block exists, point
-	 * it to freed block. If not, our block is the first
-	 * one.
+	 * Traverse the free list and find the mem block that 
+	 * precedes mem_block_to_free. If its absent our block
+	 * is the first one. If it exists point it to mem_block
+	 * to free and point mem_block_to_free to the preceding
+	 * block's previous next_block.
 	 */
 
 	struct mem_block *next_mem_block =  mem_block_to_free->next_block;
@@ -116,14 +115,6 @@ int free_mem_block(struct mem_block *mem_block_to_free, free_list *free_list){
 		fprintf(stderr, "Mem block not found in free list\n");
 		return 1;
 	}
-
-	/*
-	 * If there's no preceding_mem_block then mem_block_to_free
-	 * is the head_block in our free_list. If it exists then
-	 * mem_block_to_free's next_block should point to preceding_
-	 * mem_block's next_block. Preceding_mem_block's next_block
-	 * should then be changed to mem_block_to_free
-	 */
 
 	if (preceding_mem_block == NULL){
 		mem_block_to_free->next_block = free_list->head_block;
