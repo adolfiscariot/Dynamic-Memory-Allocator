@@ -3,8 +3,18 @@
 #include <stdint.h>
 
 #define HEAP_CAPACITY 65536 /*16 bit memory*/
+
 #define FREE_BLOCK 0x1
 #define USED_BLOCK 0x0
+
+#define BLOCK_SIZE_MASK 0xFFFFFFFE
+#define BLOCK_FREE_MASK 0x1
+
+#define GET_SIZE(block) ((block)->size_and_flags & BLOCK_SIZE_MASK)
+#define IS_FREE(block) ((block)->size_and_flags & BLOCK_FREE_MASK)
+
+#define SET_SIZE(block, size) ((block)->size_and_flags = ((size) & BLOCK_SIZE_MASK) | ((block)->size_and_flags & BLOCK_FREE_MASK))
+#define SET_FREE(block, free) ((block)->size_and_flags = ((block)->size_and_flags & BLOCK_SIZE_MASK) | ((free) & BLOCK_FREE_MASK))
 
 /*
  ========================
@@ -15,8 +25,7 @@
 //Arrange from largest to smallest for good memory alignment
 typedef struct mem_block{
 	struct mem_block *next_block;
-	int block_size;
-	uint8_t is_free; //Just a byte
+	unsigned int size_and_flags;
 	char data[];
 }mem_block;
 
@@ -37,16 +46,16 @@ typedef struct{
 
 //Initialize mem block using calloc to ensure bytes are 0's
 struct mem_block *create_mem_block(free_list *free_list){
-	struct mem_block *new_mem_block = calloc(1, HEAP_CAPACITY);
+	struct mem_block *new_mem_block = calloc(1, sizeof(struct mem_block) + HEAP_CAPACITY);
 	if (new_mem_block == NULL){
 		perror("Failed to create new mem block\n");
 		exit(1);
 	}
-	new_mem_block->block_size = HEAP_CAPACITY;
-	new_mem_block->is_free = FREE_BLOCK;
+
+	SET_SIZE(new_mem_block, HEAP_CAPACITY);
+	SET_FREE(new_mem_block, FREE_BLOCK)
+
 	new_mem_block->next_block = NULL;
-	
-	//Make this the head mem block of the free list
 	free_list->head_block = new_mem_block;
 
 	return new_mem_block;
@@ -59,13 +68,13 @@ struct mem_block *create_mem_block(free_list *free_list){
  */
 struct mem_block *alloc_mem_block(free_list *free_list, int size_to_allocate){
 	
-	//I AM NOT ALLOCATING FROM CREATED_MEM_BLOCK. WHY???
-
-
 	/*
 	 * We loop through the free list looking for the first block thats
 	 * free and of the required size. We then remove it from the free list
-	 * and change is_free to USED_BLOCK
+	 * and change is_free to USED_BLOCK. If the desired block is the head
+	 * block in our list, we shift the block pointer up by the allocated
+	 * size + sizeof(mem_block) and that becomes the beginning of our new 
+	 * head block.
 	 */
 
 	struct mem_block *preceding_mem_block = NULL;
@@ -89,18 +98,20 @@ struct mem_block *alloc_mem_block(free_list *free_list, int size_to_allocate){
 	
 	//If the current mem block is the head block...
 	if (preceding_mem_block == NULL){ 
-		int remaining = current_mem_block->block_size - size_to_allocate - sizeof(struct mem_block);
-		if (remaining > sizeof(struct mem_block)){
-			struct mem_block *new_head_block = (struct mem_block *)((char *)current_mem_block + sizeof(struct mem_block) + size_to_allocate);
+		int total_space_used = size_to_allocate + sizeof(struct mem_block);
+		int remaining_size = current_mem_block->block_size - total_space_used;
+
+		if (remaining_size > sizeof(struct mem_block)){
+			struct mem_block *new_head_block = (struct mem_block *)((char *)current_mem_block + total_space_used;
 
 			new_head_block->is_free = FREE_BLOCK;
-			new_head_block->block_size = current_mem_block->block_size - size_to_allocate;
-			new_head_block->next_block = NULL;
+			new_head_block->block_size = remaining_size;
+			new_head_block->next_block = current_mem_block->next_block;
 			free_list->head_block = new_head_block;
+			current_mem_block->block_size = size_to_allocate;
 		} else{
 			free_list->head_block = current_mem_block->next_block;
 		}
-
 	}
 
 	else {
@@ -112,7 +123,9 @@ struct mem_block *alloc_mem_block(free_list *free_list, int size_to_allocate){
 	current_mem_block->is_free = USED_BLOCK;
 	current_mem_block->block_size = size_to_allocate;
 	printf("Current mem block size: %d\n", current_mem_block->block_size);
-	return current_mem_block;
+	
+	//Return just the data section after the the metadata
+	return (struct mem_block *)((char *)current_mem_block + sizeof(struct mem_block));
 }
 
 /*
@@ -121,41 +134,9 @@ struct mem_block *alloc_mem_block(free_list *free_list, int size_to_allocate){
  */
 
 int free_mem_block(struct mem_block *mem_block_to_free, free_list *free_list){
-	/* 
-	 * Traverse the free list and find the mem block that 
-	 * precedes mem_block_to_free. If its absent our block
-	 * is the first one. If it exists point it to mem_block
-	 * to free and point mem_block_to_free to the preceding
-	 * block's previous next_block.
+	/*
+	 * Take the memory to be freed, 
 	 */
-
-	struct mem_block *next_mem_block =  mem_block_to_free->next_block;
-
-	//Loop through the list to find previous mem block
-	struct mem_block *preceding_mem_block = NULL;
-	struct mem_block *current_mem_block = free_list->head_block;
-	while(current_mem_block && current_mem_block != mem_block_to_free){
-		preceding_mem_block = current_mem_block;
-		current_mem_block = current_mem_block->next_block;
-	}
-
-	if (current_mem_block == NULL){
-		fprintf(stderr, "Mem block not found in free list\n");
-		return 1;
-	}
-
-	if (preceding_mem_block == NULL){
-		mem_block_to_free->next_block = free_list->head_block;
-		free_list->head_block = mem_block_to_free;
-	}
-	else {
-		preceding_mem_block->next_block = mem_block_to_free;
-		mem_block_to_free->next_block = preceding_mem_block->next_block;
-	}
-	mem_block_to_free->is_free = FREE_BLOCK;
-	
-	printf("Freed memory block back into free list\n");
-	return 0;
 }
 
 /*
@@ -170,17 +151,20 @@ int free_mem_block(struct mem_block *mem_block_to_free, free_list *free_list){
  * Returns 0 if successful, 1 if failed
  */
 int traverse_free_list(free_list *free_list){
-	if (free_list->head_block->next_block == NULL){
-		fprintf(stderr, "Free list is empty\n");
-		return 1;
+	if (!free_list->head_block){
+		printf("Free list is empty\n");
+		return 0;
 	}
 	
 	struct mem_block *current_mem_block = free_list->head_block;
 	
+	int num_of_free_blocks = 1; //We passed the above check so a free block exists
 	while (current_mem_block->next_block != NULL){
+		num_of_free_blocks ++;
 		current_mem_block = current_mem_block->next_block;
 	}
 	
+	printf("Num of free blocks: %d\n", num_of_free_blocks);
 	printf("End of free list\n");
 	return 0;
 
@@ -196,10 +180,11 @@ int main(void){
 	free_list *free_list = malloc(sizeof(free_list));
 
 	struct mem_block *new_mem_block = create_mem_block(free_list);
-	printf("OG Mem Block Size: %d\n", new_mem_block->block_size);
 
 	struct mem_block *allocated_mem_block = alloc_mem_block(free_list, 4096);
 	struct mem_block *second_allocated_mem_block = alloc_mem_block(free_list, 8192);
+
+	traverse_free_list(free_list);
 }
 
 
