@@ -42,6 +42,83 @@ typedef struct{
 }free_list;
 
 
+
+/*
+ ====================
+ *FREE LIST FUNCTIONS
+ ====================
+ */
+
+/*
+ * Traverse list
+ * This operation traverses the linked list
+ * Returns 0 if successful, 1 if failed
+ */
+int traverse_free_list(free_list *free_list){
+	if (!free_list->head_block){
+		printf("Free list is empty\n");
+		return 0;
+	}
+	
+	struct mem_block *current_mem_block = free_list->head_block;
+	
+	int num_of_free_blocks = 1; //We passed the above check so a free block exists
+	while (current_mem_block->next_block != NULL){
+		num_of_free_blocks ++;
+		current_mem_block = current_mem_block->next_block;
+	}
+
+	printf("Num of free blocks: %d\n", num_of_free_blocks);
+	printf("End of free list\n");
+
+	return 0;
+}
+
+/*
+ * Insert mem block back in free list.
+ * Insertions are always done at the front of the free list and coalesce the next
+ * block if free
+ */
+int insert_into_free_list(free_list *free_list, struct mem_block *mem_block_to_insert){
+	if (!free_list && !mem_block_to_insert) return 1;
+
+	//If free list is empty
+	struct mem_block *head_block = free_list->head_block;
+
+	if (head_block == NULL){
+		free_list->head_block = mem_block_to_insert;
+		mem_block_to_insert->next_block = NULL;
+	} else {
+		mem_block_to_insert->next_block = free_list->head_block;
+		free_list->head_block = mem_block_to_insert;
+	}
+
+	struct mem_block *new_block = mem_block_to_insert;
+
+	//Coalesce with next block if free
+	unsigned int mem_block_to_insert_size = GET_SIZE(mem_block_to_insert);
+	struct mem_block *next_block = (struct mem_block *)((char *)mem_block_to_insert + sizeof(struct mem_block) + mem_block_to_insert_size + sizeof(unsigned int));
+	unsigned int next_block_is_free = IS_FREE(next_block);
+
+	//If next block is free merge it with the block we're inserting
+	if (next_block_is_free){
+		unsigned int next_block_size = GET_SIZE(next_block);
+		unsigned int new_block_size = mem_block_to_insert_size + sizeof(unsigned int) + sizeof(struct mem_block) + next_block_size;
+
+
+		SET_SIZE(new_block, new_block_size);
+		SET_FREE(new_block, FREE_BLOCK);
+
+		unsigned int *new_block_footer = (unsigned int *)((char *)new_block + sizeof(struct mem_block) + new_block_size);
+		*new_block_footer = new_block->size_and_flags;
+	}
+
+	printf("The freed block's location is: %p\n", new_block);
+
+	return 0;
+}
+
+
 /*
  ===============================
  * MEMORY MANIPULATION FUNCTIONS
@@ -91,8 +168,8 @@ struct mem_block *alloc_mem_block(free_list *free_list, int size_to_allocate){
 
 	struct mem_block *preceding_mem_block = NULL;
 	struct mem_block *current_mem_block = free_list->head_block;
-	printf("Head block location: %p\n", current_mem_block);
-	printf("Head block size: %d\n", GET_SIZE(current_mem_block));
+	printf("New Head block location: %p\n", current_mem_block);
+	printf("New Head block size: %d\n", GET_SIZE(current_mem_block));
 
 	//Find first block
 	while (current_mem_block && !(GET_SIZE(current_mem_block) >= size_to_allocate && 
@@ -132,8 +209,8 @@ struct mem_block *alloc_mem_block(free_list *free_list, int size_to_allocate){
 	current_mem_block->next_block = NULL;
 	SET_FREE(current_mem_block, USED_BLOCK);
 	SET_SIZE(current_mem_block, size_to_allocate);
-	printf("Current mem block location: %p\n", current_mem_block);
-	printf("Current mem block size: %d\n", GET_SIZE(current_mem_block));
+	printf("Allocated mem block location: %p\n", current_mem_block);
+	printf("Allocated mem block size: %d\n", GET_SIZE(current_mem_block));
 	
 	//Return just the data section after the the metadata
 	return (struct mem_block *)((char *)current_mem_block + sizeof(struct mem_block));
@@ -148,7 +225,7 @@ struct mem_block *alloc_mem_block(free_list *free_list, int size_to_allocate){
  * if there's an error and 0 if everything goes well i.e. memory block is freed, coalesced
  * if possible and inserted into the free list.
  */
-int free_mem_block(struct mem_block *mem_block_to_free, free_list *free_list){
+int free_mem_block(free_list *free_list, struct mem_block *mem_block_to_free){
 	if (!mem_block_to_free){
 		return 1;
 	}
@@ -200,46 +277,8 @@ int free_mem_block(struct mem_block *mem_block_to_free, free_list *free_list){
 	}
 
 	// 4. Insert new_block in free list
+	insert_into_free_list(free_list, new_block);
 	return 0;
-}
-
-
-/*
- ====================
- *FREE LIST FUNCTIONS
- ====================
- */
-
-/*
- * Traverse list
- * This operation traverses the linked list
- * Returns 0 if successful, 1 if failed
- */
-int traverse_free_list(free_list *free_list){
-	if (!free_list->head_block){
-		printf("Free list is empty\n");
-		return 0;
-	}
-	
-	struct mem_block *current_mem_block = free_list->head_block;
-	
-	int num_of_free_blocks = 1; //We passed the above check so a free block exists
-	while (current_mem_block->next_block != NULL){
-		num_of_free_blocks ++;
-		current_mem_block = current_mem_block->next_block;
-	}
-	
-	printf("Num of free blocks: %d\n", num_of_free_blocks);
-	printf("End of free list\n");
-
-	return 0;
-}
-
-/*
- * Insert mem block back in free list
- */
-int insert_into_free_list(free_list *free_list, struct mem_block *mem_block_to_insert){
-	
 }
 
 
@@ -258,6 +297,10 @@ int main(void){
 	struct mem_block *second_allocated_mem_block = alloc_mem_block(free_list, 8192);
 
 	traverse_free_list(free_list);
+
+	int result = free_mem_block(free_list, allocated_mem_block);
+	if (result == 0) printf("Freeing worked\n");
+	else printf("Freeing failed\n");
 }
 
 
