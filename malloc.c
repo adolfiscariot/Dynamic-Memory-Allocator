@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <malloc.h>
 
 #define HEAP_CAPACITY 65536 /*16 bit memory*/
 
@@ -15,7 +16,6 @@
 
 #define SET_SIZE(block, size) ((block)->size_and_flags = ((size) & BLOCK_SIZE_MASK) | ((block)->size_and_flags & BLOCK_FREE_MASK))
 #define SET_FREE(block, free) ((block)->size_and_flags = ((block)->size_and_flags & BLOCK_SIZE_MASK) | ((free) & BLOCK_FREE_MASK))
-
 
 /*
  ========================
@@ -74,50 +74,6 @@ int traverse_free_list(free_list *free_list){
 	return 0;
 }
 
-/*
- * Insert mem block back in free list.
- * Insertions are always done at the front of the free list and coalesce the next
- * block if free
- */
-int insert_into_free_list(free_list *free_list, struct mem_block *mem_block_to_insert){
-	if (!free_list && !mem_block_to_insert) return 1;
-
-	//If free list is empty
-	struct mem_block *head_block = free_list->head_block;
-
-	if (head_block == NULL){
-		free_list->head_block = mem_block_to_insert;
-		mem_block_to_insert->next_block = NULL;
-	} else {
-		mem_block_to_insert->next_block = free_list->head_block;
-		free_list->head_block = mem_block_to_insert;
-	}
-
-	struct mem_block *new_block = mem_block_to_insert;
-
-	//Coalesce with next block if free
-	unsigned int mem_block_to_insert_size = GET_SIZE(mem_block_to_insert);
-	struct mem_block *next_block = (struct mem_block *)((char *)mem_block_to_insert + sizeof(struct mem_block) + mem_block_to_insert_size + sizeof(unsigned int));
-	unsigned int next_block_is_free = IS_FREE(next_block);
-
-	//If next block is free merge it with the block we're inserting
-	if (next_block_is_free){
-		unsigned int next_block_size = GET_SIZE(next_block);
-		unsigned int new_block_size = mem_block_to_insert_size + sizeof(unsigned int) + sizeof(struct mem_block) + next_block_size;
-
-
-		SET_SIZE(new_block, new_block_size);
-		SET_FREE(new_block, FREE_BLOCK);
-
-		unsigned int *new_block_footer = (unsigned int *)((char *)new_block + sizeof(struct mem_block) + new_block_size);
-		*new_block_footer = new_block->size_and_flags;
-	}
-
-	printf("The freed block's location is: %p\n", new_block);
-
-	return 0;
-}
-
 
 /*
  ===============================
@@ -134,7 +90,8 @@ void set_boundary_tag(struct mem_block *block){
 
 //Initialize mem block (use calloc to ensure bytes are 0's)
 struct mem_block *create_mem_block(free_list *free_list){
-	struct mem_block *new_mem_block = calloc(1, sizeof(struct mem_block) + HEAP_CAPACITY);
+	struct mem_block *new_mem_block = calloc(1, sizeof(struct mem_block) + HEAP_CAPACITY + sizeof(unsigned int));
+
 	if (new_mem_block == NULL){
 		perror("Failed to create new mem block\n");
 		exit(1);
@@ -144,10 +101,14 @@ struct mem_block *create_mem_block(free_list *free_list){
 	SET_FREE(new_mem_block, FREE_BLOCK);
 
 	set_boundary_tag(new_mem_block);
+
+	struct mem_block *payload = (struct mem_block *)((char *)new_mem_block + sizeof(struct mem_block));
+
 	new_mem_block->next_block = NULL;
 	free_list->head_block = new_mem_block;
 
-	return new_mem_block;
+	//Return the mem block's data section without the header
+	return payload;
 }
 
 //Allocate memory from mem block
@@ -168,8 +129,6 @@ struct mem_block *alloc_mem_block(free_list *free_list, int size_to_allocate){
 
 	struct mem_block *preceding_mem_block = NULL;
 	struct mem_block *current_mem_block = free_list->head_block;
-	printf("New Head block location: %p\n", current_mem_block);
-	printf("New Head block size: %d\n", GET_SIZE(current_mem_block));
 
 	//Find first block
 	while (current_mem_block && !(GET_SIZE(current_mem_block) >= size_to_allocate && 
@@ -187,7 +146,7 @@ struct mem_block *alloc_mem_block(free_list *free_list, int size_to_allocate){
 	
 	//If the current mem block is the head block...
 	if (preceding_mem_block == NULL){ 
-		int total_space_used = size_to_allocate + sizeof(struct mem_block);
+		int total_space_used = size_to_allocate + sizeof(struct mem_block) + sizeof(unsigned int);
 		int remaining_size = GET_SIZE(current_mem_block) - total_space_used;
 
 		if (remaining_size > sizeof(struct mem_block)){
@@ -198,20 +157,21 @@ struct mem_block *alloc_mem_block(free_list *free_list, int size_to_allocate){
 			new_head_block->next_block = current_mem_block->next_block;
 			free_list->head_block = new_head_block;
 			SET_SIZE(current_mem_block, size_to_allocate);
+			set_boundary_tag(new_head_block);
 		} else{
 			free_list->head_block = current_mem_block->next_block;
 		}
 	} else {
 		preceding_mem_block->next_block = current_mem_block->next_block;
-		printf("Preceding mem block size: %d\n", GET_SIZE(preceding_mem_block));
 	}
 
 	current_mem_block->next_block = NULL;
 	SET_FREE(current_mem_block, USED_BLOCK);
 	SET_SIZE(current_mem_block, size_to_allocate);
-	printf("Allocated mem block location: %p\n", current_mem_block);
-	printf("Allocated mem block size: %d\n", GET_SIZE(current_mem_block));
-	
+
+	//Set boundary tag
+	set_boundary_tag(current_mem_block);
+
 	//Return just the data section after the the metadata
 	return (struct mem_block *)((char *)current_mem_block + sizeof(struct mem_block));
 }
@@ -226,9 +186,7 @@ struct mem_block *alloc_mem_block(free_list *free_list, int size_to_allocate){
  * if possible and inserted into the free list.
  */
 int free_mem_block(free_list *free_list, struct mem_block *mem_block_to_free){
-	if (!mem_block_to_free){
-		return 1;
-	}
+	if (!mem_block_to_free) return 1;
 
 	// 1. Get block header
 	struct mem_block *mem_block = (struct mem_block *)((char *)mem_block_to_free - sizeof(struct mem_block));
@@ -237,36 +195,42 @@ int free_mem_block(free_list *free_list, struct mem_block *mem_block_to_free){
 	struct mem_block *new_block = mem_block;
 	unsigned int new_block_size = GET_SIZE(new_block);
 
-
 	// 2. If previous block exists and is free, coalesce
-	unsigned int *preceding_block_footer = (unsigned int *)((char *)mem_block - sizeof(unsigned int));
-	unsigned int preceding_block_size_and_flags = *preceding_block_footer; //To avoid manipulating the actual pointer
-	unsigned int preceding_block_size = preceding_block_size_and_flags & BLOCK_SIZE_MASK;
-	unsigned int preceding_block_is_free = preceding_block_size_and_flags & BLOCK_FREE_MASK;
+	if (new_block != free_list->head_block){
+		unsigned int *preceding_block_footer = (unsigned int *)((char *)new_block - sizeof(unsigned int));
+		unsigned int preceding_block_size_and_flags = *preceding_block_footer; //To avoid manipulating the actual pointer
+		unsigned int preceding_block_size = preceding_block_size_and_flags & BLOCK_SIZE_MASK;
+		unsigned int preceding_block_is_free = preceding_block_size_and_flags & BLOCK_FREE_MASK;
 
-	if (preceding_block_is_free == 1){
-		struct mem_block *start_of_preceding_block = (struct mem_block *)((char *)preceding_block_footer - preceding_block_size - (char *)sizeof(struct mem_block));
-		
-		//new_block is now the preceding block and not the one to free
-		new_block = start_of_preceding_block;
-		new_block_size += preceding_block_size + sizeof(unsigned int) + sizeof(struct mem_block);
+		if (preceding_block_is_free){
+			struct mem_block *start_of_preceding_block = (struct mem_block *)((char *)preceding_block_footer - preceding_block_size - sizeof(struct mem_block));
+			
+			printf("Coalescing with previous block at %p, size %u\n", start_of_preceding_block, preceding_block_size);
+			
+			//new_block is now the preceding block and not the one to free
+			new_block = start_of_preceding_block;
+			new_block_size += preceding_block_size + sizeof(unsigned int) + sizeof(struct mem_block);
 
-		SET_SIZE(new_block, new_block_size);
-		SET_FREE(new_block, FREE_BLOCK);
+			SET_SIZE(new_block, new_block_size);
+			SET_FREE(new_block, FREE_BLOCK);
 
-		//Set new boundary tag
-		unsigned int *new_block_footer = (unsigned int *)((char *)sizeof(struct mem_block) + new_block_size);
-		*new_block_footer = new_block->size_and_flags;
+			//Set new boundary tag
+			unsigned int *new_block_footer = (unsigned int *)((char *)new_block + sizeof(struct mem_block) + new_block_size);
+			*new_block_footer = new_block->size_and_flags;
+		}
 	}
 
 	// 3. If next block exists and is free, coalesce too.
 	struct mem_block *next_block = (struct mem_block *)((char *)new_block + sizeof(struct mem_block) + new_block_size + sizeof(unsigned int));
+
 	unsigned int next_block_is_free = next_block->size_and_flags & BLOCK_FREE_MASK; 
 
 	if (next_block_is_free){
 		unsigned int next_block_size = GET_SIZE(next_block);
 
 		new_block_size += sizeof(struct mem_block) + next_block_size + sizeof(unsigned int);
+
+		printf("Coalescing with next block at %p, size %u\n", next_block, next_block_size);
 
 		SET_SIZE(new_block, new_block_size);
 		SET_FREE(new_block, FREE_BLOCK);
@@ -276,32 +240,6 @@ int free_mem_block(free_list *free_list, struct mem_block *mem_block_to_free){
 		*new_block_footer = new_block->size_and_flags;
 	}
 
-	// 4. Insert new_block in free list
-	insert_into_free_list(free_list, new_block);
 	return 0;
 }
-
-
-int main(void){
-	/*
-	 * We must initialize the free list on the heap. Doing it on the stack ensures
-	 * its lifetime will be tied to a specific function which is not what we want. 
-	 * We want this list to exist for the entire allocator's lifetime.
-	 */
-
-	free_list *free_list = malloc(sizeof(free_list));
-
-	struct mem_block *new_mem_block = create_mem_block(free_list);
-
-	struct mem_block *allocated_mem_block = alloc_mem_block(free_list, 4096);
-	struct mem_block *second_allocated_mem_block = alloc_mem_block(free_list, 8192);
-
-	traverse_free_list(free_list);
-
-	int result = free_mem_block(free_list, allocated_mem_block);
-	if (result == 0) printf("Freeing worked\n");
-	else printf("Freeing failed\n");
-}
-
-
 
