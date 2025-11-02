@@ -1,5 +1,5 @@
-#ifndef MALLOC_H
-#define MALLOC_H
+#ifndef ALLOCATOR_H
+#define ALLOCATOR_H
 
 struct mem_block;
 typedef struct free_list {
@@ -13,4 +13,3 @@ int free_mem_block(free_list *free_list, struct mem_block *mem_block_to_free);
 int traverse_free_list(free_list *free_list);
 
 #endif
-

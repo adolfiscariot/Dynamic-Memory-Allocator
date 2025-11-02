@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "malloc.h"  
+#include "allocator.h"
 
 // Helper macro
 #define RUN_TEST(name) printf("\n=== Running %s ===\n", #name); name()
@@ -117,4 +117,3 @@ void test_traverse_free_list() {
     alloc_mem_block(&fl, 256);
     traverse_free_list(&fl);
 }
-

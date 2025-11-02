@@ -240,6 +240,10 @@ int free_mem_block(free_list *free_list, struct mem_block *mem_block_to_free){
 		*new_block_footer = new_block->size_and_flags;
 	}
 
+	// 4. Insert in free list (at the head)
+	new_block->next_block = free_list->head_block;
+	free_list->head_block = new_block;
+
 	return 0;
 }
 
