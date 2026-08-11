@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script src="allocator.js"></script>
+<script>
+AllocatorModule().then(mod => {
+  const init   = mod.cwrap('allocator_init',   null,     []);
+  const malloc = mod.cwrap('allocator_malloc', 'number', ['number']);
+  const free   = mod.cwrap('allocator_free',   'number', ['number']);
+
+  init();
+
+  const p = malloc(64);
+  console.log('malloc(64) =', p);
+
+  const p2 = malloc(128);
+  console.log('malloc(128) =', p2);
+
+  free(p);
+  console.log('free(p) ok');
+
+  const p3 = malloc(64);
+  console.log('malloc(64) after free =', p3);
+});
+</script>
+</body>
+</html>

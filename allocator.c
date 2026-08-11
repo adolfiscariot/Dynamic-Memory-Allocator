@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <malloc.h>
+#include <emscripten.h>
 
 #define HEAP_CAPACITY 65536 /*16 bit memory*/
 
@@ -41,7 +42,8 @@ typedef struct{
 	struct mem_block *head_block;
 }free_list;
 
-
+static free_list heap;
+static struct mem_block *heap_header;
 
 /*
  ====================
@@ -246,4 +248,62 @@ int free_mem_block(free_list *free_list, struct mem_block *mem_block_to_free){
 
 	return 0;
 }
+
+
+/*
+ ===============================
+ * WASM EXPORTED WRAPPERS
+ ===============================
+ */
+
+EMSCRIPTEN_KEEPALIVE
+void allocator_init(){
+	create_mem_block(&heap);
+	heap_header = heap.head_block;
+}
+
+EMSCRIPTEN_KEEPALIVE
+struct mem_block *allocator_malloc(int size) {
+    return alloc_mem_block(&heap, size);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int allocator_free(struct mem_block *ptr) {
+    return free_mem_block(&heap, ptr);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void allocator_reset() {
+    allocator_init();
+}
+
+/*
+ ===============================
+ * WASM INSPECTION GETTERS
+ ===============================
+ */
+
+EMSCRIPTEN_KEEPALIVE
+struct mem_block *heap_get_header() { return heap_header; }
+
+EMSCRIPTEN_KEEPALIVE
+struct mem_block *freelist_get_head() { return heap.head_block; }
+
+EMSCRIPTEN_KEEPALIVE
+unsigned int block_get_size(struct mem_block *b) { return GET_SIZE(b); }
+
+EMSCRIPTEN_KEEPALIVE
+int block_is_free(struct mem_block *b) { return IS_FREE(b); }
+
+EMSCRIPTEN_KEEPALIVE
+struct mem_block *block_get_next(struct mem_block *b) { return b->next_block; }
+
+EMSCRIPTEN_KEEPALIVE
+struct mem_block *block_get_adjacent(struct mem_block *b) {
+    return (struct mem_block *)((char *)b
+        + sizeof(struct mem_block)
+        + GET_SIZE(b)
+        + sizeof(unsigned int));
+}
+
 
