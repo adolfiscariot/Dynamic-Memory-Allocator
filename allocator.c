@@ -42,8 +42,16 @@ typedef struct{
 	struct mem_block *head_block;
 }free_list;
 
+
+/*
+ =========================
+ * GLOBAL ALLOCATOR STATE
+ =========================
+ */
+
 static free_list heap;
 static struct mem_block *heap_header;
+
 
 /*
  ====================
@@ -249,11 +257,16 @@ int free_mem_block(free_list *free_list, struct mem_block *mem_block_to_free){
 	return 0;
 }
 
+/*
+ * The functions below form the JavaScript/WASM API
+ * used to interact with the allocator running in
+ * the WASM module.
+ */
 
 /*
- ===============================
- * WASM EXPORTED WRAPPERS
- ===============================
+ ==================================
+ * ALLOCATOR MANIPULATOR FUNCTIONS
+ ==================================
  */
 
 EMSCRIPTEN_KEEPALIVE
@@ -278,9 +291,9 @@ void allocator_reset() {
 }
 
 /*
- ===============================
- * WASM INSPECTION GETTERS
- ===============================
+ =================================
+ * ALLOCATOR INSPECTION FUNCTTIONS
+ =================================
  */
 
 EMSCRIPTEN_KEEPALIVE
