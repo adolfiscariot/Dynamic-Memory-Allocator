@@ -26,9 +26,9 @@
 
 //Arrange from largest to smallest for good memory alignment
 typedef struct mem_block{
-	struct mem_block *next_block;
-	unsigned int size_and_flags;
-	char data[];
+	struct mem_block *next_block; 
+	unsigned int size_and_flags; 
+	char data[];		    
 }mem_block;
 
 
@@ -206,7 +206,7 @@ int free_mem_block(free_list *free_list, struct mem_block *mem_block_to_free){
 	unsigned int new_block_size = GET_SIZE(new_block);
 
 	// 2. If previous block exists and is free, coalesce
-	if (new_block != free_list->head_block){
+	if (new_block != heap_header){
 		unsigned int *preceding_block_footer = (unsigned int *)((char *)new_block - sizeof(unsigned int));
 		unsigned int preceding_block_size_and_flags = *preceding_block_footer; //To avoid manipulating the actual pointer
 		unsigned int preceding_block_size = preceding_block_size_and_flags & BLOCK_SIZE_MASK;
@@ -316,6 +316,14 @@ struct mem_block *block_get_adjacent(struct mem_block *b) {
     return (struct mem_block *)((char *)b
         + sizeof(struct mem_block)
         + GET_SIZE(b)
+        + sizeof(unsigned int));
+}
+
+EMSCRIPTEN_KEEPALIVE
+struct mem_block *heap_get_end() {
+    return (struct mem_block *)((char *)heap_header
+        + sizeof(struct mem_block)
+        + HEAP_CAPACITY
         + sizeof(unsigned int));
 }
 

@@ -2,26 +2,27 @@
 <html>
 <body>
 <script src="allocator.js"></script>
-<script>
-AllocatorModule().then(mod => {
-  const init   = mod.cwrap('allocator_init',   null,     []);
-  const malloc = mod.cwrap('allocator_malloc', 'number', ['number']);
-  const free   = mod.cwrap('allocator_free',   'number', ['number']);
+<script type="module">
+import { initBridge, malloc, free, reset, snapshotHeap, snapshotFreeList } from './bridge.js';
 
-  init();
+await initBridge();
 
-  const p = malloc(64);
-  console.log('malloc(64) =', p);
+const p = malloc(64);
+console.log('malloc(64) =', p);
 
-  const p2 = malloc(128);
-  console.log('malloc(128) =', p2);
+const p2 = malloc(128);
+console.log('malloc(128) =', p2);
 
-  free(p);
-  console.log('free(p) ok');
+const p3 = malloc(256);
+console.log('malloc(256) =', p3);
 
-  const p3 = malloc(64);
-  console.log('malloc(64) after free =', p3);
-});
+console.log('heap snapshot:', snapshotHeap());
+console.log('free list:', snapshotFreeList());
+
+free(p);
+console.log('after free(p):');
+console.log('heap snapshot:', snapshotHeap());
+console.log('free list:', snapshotFreeList());
 </script>
 </body>
 </html>
